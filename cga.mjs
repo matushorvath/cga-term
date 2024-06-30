@@ -213,11 +213,30 @@ const writeCga_320x200 = (addr, data) => {
     clrs[(data[addr_row3] >> 2) & 0b11]++;
     clrs[(data[addr_row3] >> 0) & 0b11]++;
 
-    // Order the four colors by use count
-    // TODO optimized sort for exactly 4 elements
-    const sorted = [...clrs.entries()].sort((a, b) => b[1] - a[1]);
-    // Two most used colors in this character, sort them by value
-    const twocolors = [sorted[0][0], sorted[1][0]];
+    // Find two most used colors in this character
+    const clrs01 = clrs.slice(0, 2);
+    const clrs23 = clrs.slice(2);
+    const twocolors = [0, 0];
+
+    const max01 = clrs01[0] < clrs01[1] ? 1 : 0;
+    const max23 = clrs23[0] < clrs23[1] ? 1 : 0;
+    if (clrs01[max01] < clrs23[max23]) {
+        twocolors[0] = max23 + 2;
+        const min23 = (max23 ? 0 : 1);
+        if (clrs01[max01] < clrs23[min23]) {
+            twocolors[1] = min23 + 2;
+        } else {
+            twocolors[1] = max01;
+        }
+    } else {
+        twocolors[0] = max01;
+        const min01 = (max01 ? 0 : 1);
+        if (clrs01[min01] < clrs23[max23]) {
+            twocolors[1] = max23 + 2;
+        } else {
+            twocolors[1] = min01;
+        }
+    }
 
     // Find a color mapping based on the two most used colors
     const tcbin = (twocolors[0] << 2) + twocolors[1];
