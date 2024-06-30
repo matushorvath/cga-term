@@ -33,14 +33,14 @@ const resetColor = () => process.stdout.write('\x1b[0m');
 //     { r:   0, g:   0, b:   0 },         // black
 //     { r: 170, g:   0, b:   0 },         // red
 //     { r:   0, g: 170, b:   0 },         // green
-//     { r: 255, g: 255, b:  85 }          // yellow
+//     { r: 170, g: 170, b:  85 }          // yellow
 // ];
 
 const palette1 = [
     { r:   0, g:   0, b:   0 },         // black
     { r: 170, g:   0, b: 170 },         // magenta
     { r:   0, g: 170, b: 170 },         // cyan
-    { r: 255, g: 255, b: 255 }          // white
+    { r: 170, g: 170, b: 170 }          // white
 ];
 
 const BLOCKS_4x2 = [
@@ -73,7 +73,7 @@ const loadCgaImage = async (filename) => {
     const cols = 320, rows = 200, ppb = 4, palette = palette1;
 
     const image = await sharp(filename)
-        .resize(cols, rows, { fit: 'inside' })
+        .resize(cols, rows, { fit: 'cover' })
         .toColorspace('srgb');
 
     const buffer = await image.raw().toBuffer({ resolveWithObject: true });
@@ -88,7 +88,7 @@ const loadCgaImage = async (filename) => {
 
             let cgapx = 0;
             for (let p = 0; p < ppb; p++) {
-                const index = 3 * (r * cols + c + p);
+                const index = buffer.info.channels * (r * cols + c + p);
                 const color = {
                     r: buffer.data[index + 0],
                     g: buffer.data[index + 1],
@@ -115,11 +115,6 @@ const displayCga_320x200 = (data) => {
         writeCga_320x200(addr, data);
     }
 };
-
-/*
-0246802468024680246802468
-                  𜴧𜶻𜵳𜵮𜴃𜴂 
-*/
 
 const writeCga_320x200 = (addr, data) => {
     // Update all characters affected by writing one byte to CGA memory (that's 2 characters for 320x200)
@@ -150,12 +145,12 @@ const writeCga_320x200 = (addr, data) => {
     if (addr > 100 * 80) return;
 
     // Calculate CGA pixel coordinates from the memory address
-    // TODO use shr + div5/mod5 for the division/modulo
+    // ICTD use shr + div5/mod5 for the division/modulo
     const cgar = Math.floor(addr / 80) * 2 + odd;
     const cgac = (addr % 80) * PPB;     // first out of PPB = 4 columns updated on this row
 
     // Calculate terminal character cordinates from CGA pixel coordinates
-    // TODO use shr for the division
+    // ICTD use shr for the division
     const termr = Math.floor(cgar / RBL);
     const termc = Math.floor(cgac / CBL);   // first out of PPB / CBL = 2 characters updated on this row
 
@@ -166,47 +161,93 @@ const writeCga_320x200 = (addr, data) => {
     // Find pixels for the two characters
     let ch0 = 0, ch1 = 0;
 
-    // Calculate memory address for the first row of the two characters
+    // Calculate memory address for each row of the two characters
     // Use the fact that first row of each character is an even number
-    // aa bb aa bb -> 0b000000ba
-    let charaddr = Math.floor(charr / 2) * 80 + Math.floor(charc / 4);
-    // TODO use bits and shr, perhaps a special table for half-nibbles
-    // TODO this would be easier if BLOCK_4x2 was ordered differently (aa bb cc dd, not dd cc bb aa)
-    ch0 += (data[charaddr] & 0b11000000) === 0 ? 0b00000000 : 0b00000001;
-    ch0 += (data[charaddr] & 0b00110000) === 0 ? 0b00000000 : 0b00000010;
-    ch1 += (data[charaddr] & 0b00001100) === 0 ? 0b00000000 : 0b00000001;
-    ch1 += (data[charaddr] & 0b00000011) === 0 ? 0b00000000 : 0b00000010;
+    // ICTD use bits and shr, perhaps a special table for half-nibbles
+    const addr_row0 = Math.floor(charr / 2) * 80 + Math.floor(charc / 4);
+    const addr_row1 = addr_row0 + 0x2000;
+    const addr_row2 = addr_row0 + 80;
+    const addr_row3 = addr_row1 + 80;
 
-    // Second row of the two characters
-    // cc dd cc dd -> 0b0000dc00
-    charaddr = charaddr + 0x2000;
-    ch0 += (data[charaddr] & 0b11000000) === 0 ? 0b00000000 : 0b00000100;
-    ch0 += (data[charaddr] & 0b00110000) === 0 ? 0b00000000 : 0b00001000;
-    ch1 += (data[charaddr] & 0b00001100) === 0 ? 0b00000000 : 0b00000100;
-    ch1 += (data[charaddr] & 0b00000011) === 0 ? 0b00000000 : 0b00001000;
+    // Count which colors are used in this character
+    const clrs = [0, 0, 0, 0];
+
+    clrs[(data[addr_row0] >> 6) & 0b11]++;
+    clrs[(data[addr_row0] >> 4) & 0b11]++;
+    clrs[(data[addr_row0] >> 2) & 0b11]++;
+    clrs[(data[addr_row0] >> 0) & 0b11]++;
+
+    clrs[(data[addr_row1] >> 6) & 0b11]++;
+    clrs[(data[addr_row1] >> 4) & 0b11]++;
+    clrs[(data[addr_row1] >> 2) & 0b11]++;
+    clrs[(data[addr_row1] >> 0) & 0b11]++;
+
+    clrs[(data[addr_row2] >> 6) & 0b11]++;
+    clrs[(data[addr_row2] >> 4) & 0b11]++;
+    clrs[(data[addr_row2] >> 2) & 0b11]++;
+    clrs[(data[addr_row2] >> 0) & 0b11]++;
+
+    clrs[(data[addr_row3] >> 6) & 0b11]++;
+    clrs[(data[addr_row3] >> 4) & 0b11]++;
+    clrs[(data[addr_row3] >> 2) & 0b11]++;
+    clrs[(data[addr_row3] >> 0) & 0b11]++;
+
+    // Order the four colors by use count
+    // TODO optimized sort for exactly 4 elements
+    const sorted = [...clrs.entries()].sort((a, b) => b[1] - a[1]);
+    // Two most used colors in this character, sort them by value
+    const twocolors = [sorted[0][0], sorted[1][0]].sort((a, b) => a - b);
+
+    // Find a color mapping based on the two most used colors
+    // TODO find a way to keep MAPPINGS an array
+    const tcbin = (twocolors[0] << 2) + twocolors[1];
+    const MAPPINGS = {
+        //       B  M  C  W
+        0b0001: [0, 1, 1, 1],           // 01 0b_0001
+        0b0010: [0, 1, 1, 1],           // 02 0b_0010
+        0b0011: [0, 1, 1, 1],           // 03 0b_0011
+        0b0110: [1, 0, 1, 1],           // 12 0b_0110
+        0b0111: [0, 0, 1, 1],           // 13 0b_0111
+        0b1011: [0, 1, 0, 1]            // 23 0b_1011
+    };
+    const map = MAPPINGS[tcbin];
+
+    // First row of the two characters
+    // aa bb aa bb -> 0b_000000ba
+    ch0 += map[(data[addr_row0] >> 6) & 0b11] << 0;
+    ch0 += map[(data[addr_row0] >> 4) & 0b11] << 1;
+    ch1 += map[(data[addr_row0] >> 2) & 0b11] << 0;
+    ch1 += map[(data[addr_row0] >> 0) & 0b11] << 1;
+
+    // Second row
+    // cc dd cc dd -> 0b_0000dc00
+    ch0 += map[(data[addr_row1] >> 6) & 0b11] << 2;
+    ch0 += map[(data[addr_row1] >> 4) & 0b11] << 3;
+    ch1 += map[(data[addr_row1] >> 2) & 0b11] << 2;
+    ch1 += map[(data[addr_row1] >> 0) & 0b11] << 3;
 
     // Third row
-    // ee ff ee ff -> 0b00fe0000
-    charaddr = charaddr - 0x2000 + 80;
-    ch0 += (data[charaddr] & 0b11000000) === 0 ? 0b00000000 : 0b00010000;
-    ch0 += (data[charaddr] & 0b00110000) === 0 ? 0b00000000 : 0b00100000;
-    ch1 += (data[charaddr] & 0b00001100) === 0 ? 0b00000000 : 0b00010000;
-    ch1 += (data[charaddr] & 0b00000011) === 0 ? 0b00000000 : 0b00100000;
+    // ee ff ee ff -> 0b_00fe0000
+    ch0 += map[(data[addr_row2] >> 6) & 0b11] << 4;
+    ch0 += map[(data[addr_row2] >> 4) & 0b11] << 5;
+    ch1 += map[(data[addr_row2] >> 2) & 0b11] << 4;
+    ch1 += map[(data[addr_row2] >> 0) & 0b11] << 5;
 
-    // Fourth row of the two characters
-    // gg hh gg hh -> 0bhg000000
-    charaddr = charaddr + 0x2000;
-    ch0 += (data[charaddr] & 0b11000000) === 0 ? 0b00000000 : 0b01000000;
-    ch0 += (data[charaddr] & 0b00110000) === 0 ? 0b00000000 : 0b10000000;
-    ch1 += (data[charaddr] & 0b00001100) === 0 ? 0b00000000 : 0b01000000;
-    ch1 += (data[charaddr] & 0b00000011) === 0 ? 0b00000000 : 0b10000000;
+    // Fourth row
+    // gg hh gg hh -> 0b_hg000000
+    ch0 += map[(data[addr_row3] >> 6) & 0b11] << 6;
+    ch0 += map[(data[addr_row3] >> 4) & 0b11] << 7;
+    ch1 += map[(data[addr_row3] >> 2) & 0b11] << 6;
+    ch1 += map[(data[addr_row3] >> 0) & 0b11] << 7;
 
     // Output the two characters
     setCursor(termr + 1, termc + 1);
 
     // TODO color
-    setForeground(0xff, 0xff, 0xff);
-    setBackground(0x00, 0x00, 0x00);
+    const fg = palette1[twocolors[1]];
+    setForeground(fg.r, fg.g, fg.b);
+    const bg = palette1[twocolors[0]];
+    setBackground(bg.r, bg.g, bg.b);
 
     process.stdout.write(BLOCKS_4x2[ch0]);
     process.stdout.write(BLOCKS_4x2[ch1]);
@@ -223,7 +264,10 @@ const dumpRawImage = (data) => {
 };
 
 const main = async () => {
-    const cgaimg = await loadCgaImage('av1.gif');
+    //const cgaimg = await loadCgaImage('ac1.gif');
+    //const cgaimg = await loadCgaImage('av1.gif');
+    const cgaimg = await loadCgaImage('pr1.gif');
+    //const cgaimg = await loadCgaImage('pr2.png');
 
     //dumpRawImage(cgaimg);
     //return 0;
