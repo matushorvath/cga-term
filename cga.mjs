@@ -29,18 +29,40 @@ const setForeground = (r, g, b) => process.stdout.write(`\x1b[38;2;${r};${g};${b
 const setBackground = (r, g, b) => process.stdout.write(`\x1b[48;2;${r};${g};${b}m`);
 const resetColor = () => process.stdout.write('\x1b[0m');
 
-// const palette0 = [
+// const PALETTE0 = [
 //     { r:   0, g:   0, b:   0 },         // black
 //     { r: 170, g:   0, b:   0 },         // red
 //     { r:   0, g: 170, b:   0 },         // green
 //     { r: 170, g: 170, b:  85 }          // yellow
 // ];
 
-const palette1 = [
+const PALETTE1 = [
     { r:   0, g:   0, b:   0 },         // black
     { r: 170, g:   0, b: 170 },         // magenta
     { r:   0, g: 170, b: 170 },         // cyan
     { r: 170, g: 170, b: 170 }          // white
+];
+
+// If colors a,b will be used in a character, use map[a << 2 + b].
+// The map convers each 2-bit CGA color to a or b (0 or 1).
+const COLOR_MAPPINGS_PALETTE1 = [
+//   B  M  C  W
+    undefined,              // 0,0          0
+    [0, 1, 1, 1],           // 0,1 0b_0001  1
+    [0, 1, 1, 1],           // 0,2 0b_0010  2
+    [0, 1, 1, 1],           // 0,3 0b_0011  3
+    [1, 0, 0, 0],           // 1,0 0b_0100  4
+    undefined,              // 1,1          5
+    [1, 0, 1, 1],           // 1,2 0b_0110  6
+    [0, 0, 1, 1],           // 1,3 0b_0111  7
+    [1, 0, 0, 0],           // 2,0 0b_1000  8
+    [0, 1, 0, 0],           // 2,1 0b_1001  9
+    undefined,              // 2,2         10
+    [0, 1, 0, 1],           // 2,3 0b_1011 11
+    [1, 0, 0, 0],           // 3,0 0b_1100 12
+    [1, 1, 0, 0],           // 3,1 0b_1101 13
+    [1, 0, 1, 0],           // 3,2 0b_1110 14
+    undefined               // 3,3         15
 ];
 
 const BLOCKS_4x2 = [
@@ -70,7 +92,7 @@ const PPB = 4;
 
 const loadCgaImage = async (filename) => {
     // Convert an image to CGA format: 320x200, 2 bits per pixel, interlaced
-    const cols = 320, rows = 200, ppb = 4, palette = palette1;
+    const cols = 320, rows = 200, ppb = 4, palette = PALETTE1;
 
     const image = await sharp(filename)
         .resize(cols, rows, { fit: 'cover' })
@@ -119,10 +141,10 @@ const displayCga_320x200 = (data) => {
 const writeCga_320x200 = (addr, data) => {
     // Update all characters affected by writing one byte to CGA memory (that's 2 characters for 320x200)
     //
-    // bits:     01 23 45 67 01 23 45 67 01 23 45 67 01 23 45 67
-    // bytes:   |           |           |           |           |
-    // pixels:  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |
-    // chars:   |     |     |     |     |     |     |     |     |
+    // bits:     01 23 45 67 01 23 45 67 01 23 45 67 
+    // bytes:   |           |           |           |
+    // pixels:  |  |  |  |  |  |  |  |  |  |  |  |  |
+    // chars:   |     |     |     |     |     |     |
     //                       aa bb aa bb
     //                       cc dd cc dd
     //                       ee ff ee ff
@@ -141,8 +163,7 @@ const writeCga_320x200 = (addr, data) => {
     if (odd) addr -= 0x2000;
 
     // check for address too large to be on screen
-    // TODO still drawing one extra character, why?
-    if (addr > 100 * 80) return;
+    if (addr >= 100 * 80) return;
 
     // Calculate CGA pixel coordinates from the memory address
     // ICTD use shr + div5/mod5 for the division/modulo
@@ -199,18 +220,8 @@ const writeCga_320x200 = (addr, data) => {
     const twocolors = [sorted[0][0], sorted[1][0]].sort((a, b) => a - b);
 
     // Find a color mapping based on the two most used colors
-    // TODO find a way to keep MAPPINGS an array
     const tcbin = (twocolors[0] << 2) + twocolors[1];
-    const MAPPINGS = {
-        //       B  M  C  W
-        0b0001: [0, 1, 1, 1],           // 01 0b_0001
-        0b0010: [0, 1, 1, 1],           // 02 0b_0010
-        0b0011: [0, 1, 1, 1],           // 03 0b_0011
-        0b0110: [1, 0, 1, 1],           // 12 0b_0110
-        0b0111: [0, 0, 1, 1],           // 13 0b_0111
-        0b1011: [0, 1, 0, 1]            // 23 0b_1011
-    };
-    const map = MAPPINGS[tcbin];
+    const map = COLOR_MAPPINGS_PALETTE1[tcbin];
 
     // First row of the two characters
     // aa bb aa bb -> 0b_000000ba
@@ -243,10 +254,9 @@ const writeCga_320x200 = (addr, data) => {
     // Output the two characters
     setCursor(termr + 1, termc + 1);
 
-    // TODO color
-    const fg = palette1[twocolors[1]];
+    const fg = PALETTE1[twocolors[1]];
     setForeground(fg.r, fg.g, fg.b);
-    const bg = palette1[twocolors[0]];
+    const bg = PALETTE1[twocolors[0]];
     setBackground(bg.r, bg.g, bg.b);
 
     process.stdout.write(BLOCKS_4x2[ch0]);
@@ -277,7 +287,7 @@ const main = async () => {
     alternateBuffer();
     clearDisplay();
 
-    displayCga_320x200(cgaimg, palette1);
+    displayCga_320x200(cgaimg, PALETTE1);
     resetColor();
 
     await keypress();
