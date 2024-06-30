@@ -81,14 +81,14 @@ const loadCgaImage = async (filename) => {
     const cgaimg = [];
 
     for (let r = 0; r < rows; r++) {
-        const cgar = r % 2 === 0 ? r : r + 0x2000;
+        const cgar = (r % 2 === 0 ? 0 : 0x2000) + Math.floor(r / 2) * 80;
 
         for (let c = 0; c < cols; c += ppb) {
-            const cgac = c / ppb;
+            const cgac = Math.floor(c / ppb);
 
             let cgapx = 0;
             for (let p = 0; p < ppb; p++) {
-                const index = 3 * r * cols + c + p;
+                const index = 3 * (r * cols + c + p);
                 const color = {
                     r: buffer.data[index + 0],
                     g: buffer.data[index + 1],
@@ -103,7 +103,7 @@ const loadCgaImage = async (filename) => {
                 cgapx += (match << (2 * p));
             }
 
-            cgaimg[cgar * 80 + cgac] = cgapx;
+            cgaimg[cgar + cgac] = cgapx;
         }
     }
 
@@ -205,9 +205,11 @@ const writeCga_320x200 = (addr, data) => {
 
 const dumpRawImage = (data) => {
     for (let r = 0; r < 200; r++) {
-        for (let c = 0; c < 320; c++) {
-            process.stdout.write(data[r * 320 + c] === 0 ? ' ' : 'X');
+        const memr = (r % 2 === 0 ? 0 : 0x2000) + Math.floor(r / 2) * 80;
+        for (let c = 0; c < 80; c++) {
+            process.stdout.write(data[memr + c] === 0 ? ' ' : 'X');
         }
+        process.stdout.write('\n');
     }
 };
 
@@ -215,15 +217,15 @@ const main = async () => {
     const cgaimg = await loadCgaImage('av1.gif');
     //const cgaimg = await loadCgaImage('ac1.gif');
 
-    dumpRawImage(cgaimg);
-    return 0;
+    //dumpRawImage(cgaimg);
+    //return 0;
 
     hideCursor();
     saveCursor();
     alternateBuffer();
     clearDisplay();
 
-    //displayCga_320x200(cgaimg, palette1);
+    displayCga_320x200(cgaimg, palette1);
     resetColor();
 
     await keypress();
