@@ -217,7 +217,7 @@ const writeCga_320x200 = (addr, data) => {
     // TODO optimized sort for exactly 4 elements
     const sorted = [...clrs.entries()].sort((a, b) => b[1] - a[1]);
     // Two most used colors in this character, sort them by value
-    const twocolors = [sorted[0][0], sorted[1][0]].sort((a, b) => a - b);
+    const twocolors = [sorted[0][0], sorted[1][0]];
 
     // Find a color mapping based on the two most used colors
     const tcbin = (twocolors[0] << 2) + twocolors[1];
