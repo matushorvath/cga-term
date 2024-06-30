@@ -100,7 +100,7 @@ const loadCgaImage = async (filename) => {
                 ]);
                 const match = dist.sort((a, b) => a[1] - b[1])[0][0];
 
-                cgapx += (match << (2 * p));
+                cgapx += (match << (2 * (3-p)));
             }
 
             cgaimg[cgar + cgac] = cgapx;
@@ -115,6 +115,11 @@ const displayCga_320x200 = (data) => {
         writeCga_320x200(addr, data);
     }
 };
+
+/*
+0246802468024680246802468
+                  𜴧𜶻𜵳𜵮𜴃𜴂 
+*/
 
 const writeCga_320x200 = (addr, data) => {
     // Update all characters affected by writing one byte to CGA memory (that's 2 characters for 320x200)
@@ -139,6 +144,10 @@ const writeCga_320x200 = (addr, data) => {
     // Also, don't forget that CGA memory is interlaced
     const odd = addr >= 0x2000;
     if (odd) addr -= 0x2000;
+
+    // check for address too large to be on screen
+    // TODO still drawing one extra character, why?
+    if (addr > 100 * 80) return;
 
     // Calculate CGA pixel coordinates from the memory address
     // TODO use shr + div5/mod5 for the division/modulo
@@ -178,7 +187,7 @@ const writeCga_320x200 = (addr, data) => {
 
     // Third row
     // ee ff ee ff -> 0b00fe0000
-    charaddr = charaddr - 0x2000 + 1;
+    charaddr = charaddr - 0x2000 + 80;
     ch0 += (data[charaddr] & 0b11000000) === 0 ? 0b00000000 : 0b00010000;
     ch0 += (data[charaddr] & 0b00110000) === 0 ? 0b00000000 : 0b00100000;
     ch1 += (data[charaddr] & 0b00001100) === 0 ? 0b00000000 : 0b00010000;
@@ -215,7 +224,6 @@ const dumpRawImage = (data) => {
 
 const main = async () => {
     const cgaimg = await loadCgaImage('av1.gif');
-    //const cgaimg = await loadCgaImage('ac1.gif');
 
     //dumpRawImage(cgaimg);
     //return 0;
