@@ -5,7 +5,7 @@ const keypress = async () => {
     const { resolve, _reject, promise } = Promise.withResolvers();
 
     process.stdin.setRawMode(true);
-    process.stdin.once('data', key => {
+    process.stdin.once('data', () => {
         process.stdin.setRawMode(false);
         process.stdin.pause();
         resolve();
@@ -24,11 +24,11 @@ const clearDisplay = () => process.stdout.write('\x1b[2J');
 const alternateBuffer = () => process.stdout.write('\x1b[?47h');
 const normalBuffer = () => process.stdout.write('\x1b[?47l');
 
-const insertMode = () => process.stdout.write('\x1b[4h');
-const replaceMode = () => process.stdout.write('\x1b[4l');
+//const insertMode = () => process.stdout.write('\x1b[4h');
+//const replaceMode = () => process.stdout.write('\x1b[4l');
 
-const autoNewline = () => process.stdout.write('\x1b[20h');
-const normalNewline = () => process.stdout.write('\x1b[20l');
+//const autoNewline = () => process.stdout.write('\x1b[20h');
+//const normalNewline = () => process.stdout.write('\x1b[20l');
 
 const hideCursor = () => process.stdout.write('\x1b[?25l');
 const showCursor = () => process.stdout.write('\x1b[?25h');
