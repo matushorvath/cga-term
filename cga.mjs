@@ -36,11 +36,18 @@ const resetColor = () => process.stdout.write('\x1b[0m');
 //     { r: 170, g: 170, b:  85 }          // yellow
 // ];
 
-const PALETTE1 = [
+const PALETTE1_LO = [
     { r:   0, g:   0, b:   0 },         // black
     { r: 170, g:   0, b: 170 },         // magenta
     { r:   0, g: 170, b: 170 },         // cyan
     { r: 170, g: 170, b: 170 }          // white
+];
+
+const PALETTE1_HI = [
+    { r:   0, g:   0, b:   0 },         // black
+    { r: 255, g:  85, b: 255 },         // magenta
+    { r:  85, g: 255, b: 255 },         // cyan
+    { r: 255, g: 255, b: 255 }          // white
 ];
 
 // If colors a,b will be used in a character, use map[a << 2 + b].
@@ -90,9 +97,9 @@ const CBL = 2;
 // Pixels per byte, 4 for CGA 320x200
 const PPB = 4;
 
-const loadCgaImage = async (filename) => {
+const loadCgaImage = async (filename, palette) => {
     // Convert an image to CGA format: 320x200, 2 bits per pixel, interlaced
-    const cols = 320, rows = 200, ppb = 4, palette = PALETTE1;
+    const cols = 320, rows = 200, ppb = 4;
 
     const image = await sharp(filename)
         .resize(cols, rows, { fit: 'cover' })
@@ -129,16 +136,16 @@ const loadCgaImage = async (filename) => {
         }
     }
 
-    return cgaimg;
+    return { data: cgaimg, palette };
 };
 
-const displayCga_320x200 = (data) => {
+const displayCga_320x200 = (data, palette) => {
     for (let addr = 0; addr < 0x4000; addr++) {
-        writeCga_320x200(addr, data);
+        writeCga_320x200(addr, data, palette);
     }
 };
 
-const writeCga_320x200 = (addr, data) => {
+const writeCga_320x200 = (addr, data, palette) => {
     // Update all characters affected by writing one byte to CGA memory (that's 2 characters for 320x200)
     //
     // bits:     01 23 45 67 01 23 45 67 01 23 45 67 
@@ -191,94 +198,110 @@ const writeCga_320x200 = (addr, data) => {
     const addr_row3 = addr_row1 + 80;
 
     // Count which colors are used in this character
-    const clrs = [0, 0, 0, 0];
+    const clrs0 = [0, 0, 0, 0];
+    const clrs1 = [0, 0, 0, 0];
 
-    clrs[(data[addr_row0] >> 6) & 0b11]++;
-    clrs[(data[addr_row0] >> 4) & 0b11]++;
-    clrs[(data[addr_row0] >> 2) & 0b11]++;
-    clrs[(data[addr_row0] >> 0) & 0b11]++;
+    clrs0[(data[addr_row0] >> 6) & 0b11]++;
+    clrs0[(data[addr_row0] >> 4) & 0b11]++;
+    clrs1[(data[addr_row0] >> 2) & 0b11]++;
+    clrs1[(data[addr_row0] >> 0) & 0b11]++;
 
-    clrs[(data[addr_row1] >> 6) & 0b11]++;
-    clrs[(data[addr_row1] >> 4) & 0b11]++;
-    clrs[(data[addr_row1] >> 2) & 0b11]++;
-    clrs[(data[addr_row1] >> 0) & 0b11]++;
+    clrs0[(data[addr_row1] >> 6) & 0b11]++;
+    clrs0[(data[addr_row1] >> 4) & 0b11]++;
+    clrs1[(data[addr_row1] >> 2) & 0b11]++;
+    clrs1[(data[addr_row1] >> 0) & 0b11]++;
 
-    clrs[(data[addr_row2] >> 6) & 0b11]++;
-    clrs[(data[addr_row2] >> 4) & 0b11]++;
-    clrs[(data[addr_row2] >> 2) & 0b11]++;
-    clrs[(data[addr_row2] >> 0) & 0b11]++;
+    clrs0[(data[addr_row2] >> 6) & 0b11]++;
+    clrs0[(data[addr_row2] >> 4) & 0b11]++;
+    clrs1[(data[addr_row2] >> 2) & 0b11]++;
+    clrs1[(data[addr_row2] >> 0) & 0b11]++;
 
-    clrs[(data[addr_row3] >> 6) & 0b11]++;
-    clrs[(data[addr_row3] >> 4) & 0b11]++;
-    clrs[(data[addr_row3] >> 2) & 0b11]++;
-    clrs[(data[addr_row3] >> 0) & 0b11]++;
+    clrs0[(data[addr_row3] >> 6) & 0b11]++;
+    clrs0[(data[addr_row3] >> 4) & 0b11]++;
+    clrs1[(data[addr_row3] >> 2) & 0b11]++;
+    clrs1[(data[addr_row3] >> 0) & 0b11]++;
 
     // Find two most used colors in this character
-    const clrs01 = clrs.slice(0, 2);
-    const clrs23 = clrs.slice(2);
-    const twocolors = [0, 0];
+    // TODO refactor common code for color handling, we do the whole thing twice not just this lambda
+    const sortcolors = (clrs) => {
+        const clrs01 = clrs.slice(0, 2);
+        const clrs23 = clrs.slice(2);
+        const twocolors = [0, 0];
 
-    const max01 = clrs01[0] < clrs01[1] ? 1 : 0;
-    const max23 = clrs23[0] < clrs23[1] ? 1 : 0;
-    if (clrs01[max01] < clrs23[max23]) {
-        twocolors[0] = max23 + 2;
-        const min23 = (max23 ? 0 : 1);
-        if (clrs01[max01] < clrs23[min23]) {
-            twocolors[1] = min23 + 2;
+        const max01 = clrs01[0] < clrs01[1] ? 1 : 0;
+        const max23 = clrs23[0] < clrs23[1] ? 1 : 0;
+        if (clrs01[max01] < clrs23[max23]) {
+            twocolors[0] = max23 + 2;
+            const min23 = (max23 ? 0 : 1);
+            if (clrs01[max01] < clrs23[min23]) {
+                twocolors[1] = min23 + 2;
+            } else {
+                twocolors[1] = max01;
+            }
         } else {
-            twocolors[1] = max01;
+            twocolors[0] = max01;
+            const min01 = (max01 ? 0 : 1);
+            if (clrs01[min01] < clrs23[max23]) {
+                twocolors[1] = max23 + 2;
+            } else {
+                twocolors[1] = min01;
+            }
         }
-    } else {
-        twocolors[0] = max01;
-        const min01 = (max01 ? 0 : 1);
-        if (clrs01[min01] < clrs23[max23]) {
-            twocolors[1] = max23 + 2;
-        } else {
-            twocolors[1] = min01;
-        }
-    }
+        return twocolors;
+    };
+    const twocolors0 = sortcolors(clrs0);
+    const twocolors1 = sortcolors(clrs1);
 
     // Find a color mapping based on the two most used colors
-    const tcbin = (twocolors[0] << 2) + twocolors[1];
-    const map = COLOR_MAPPINGS_PALETTE1[tcbin];
+    // TODO refactor, duplication
+    const tcbin0 = (twocolors0[0] << 2) + twocolors0[1];
+    const tcbin1 = (twocolors1[0] << 2) + twocolors1[1];
+    const map0 = COLOR_MAPPINGS_PALETTE1[tcbin0];
+    const map1 = COLOR_MAPPINGS_PALETTE1[tcbin1];
 
     // First row of the two characters
     // aa bb aa bb -> 0b_000000ba
-    ch0 += map[(data[addr_row0] >> 6) & 0b11] << 0;
-    ch0 += map[(data[addr_row0] >> 4) & 0b11] << 1;
-    ch1 += map[(data[addr_row0] >> 2) & 0b11] << 0;
-    ch1 += map[(data[addr_row0] >> 0) & 0b11] << 1;
+    ch0 += map0[(data[addr_row0] >> 6) & 0b11] << 0;
+    ch0 += map0[(data[addr_row0] >> 4) & 0b11] << 1;
+    ch1 += map1[(data[addr_row0] >> 2) & 0b11] << 0;
+    ch1 += map1[(data[addr_row0] >> 0) & 0b11] << 1;
 
     // Second row
     // cc dd cc dd -> 0b_0000dc00
-    ch0 += map[(data[addr_row1] >> 6) & 0b11] << 2;
-    ch0 += map[(data[addr_row1] >> 4) & 0b11] << 3;
-    ch1 += map[(data[addr_row1] >> 2) & 0b11] << 2;
-    ch1 += map[(data[addr_row1] >> 0) & 0b11] << 3;
+    ch0 += map0[(data[addr_row1] >> 6) & 0b11] << 2;
+    ch0 += map0[(data[addr_row1] >> 4) & 0b11] << 3;
+    ch1 += map1[(data[addr_row1] >> 2) & 0b11] << 2;
+    ch1 += map1[(data[addr_row1] >> 0) & 0b11] << 3;
 
     // Third row
     // ee ff ee ff -> 0b_00fe0000
-    ch0 += map[(data[addr_row2] >> 6) & 0b11] << 4;
-    ch0 += map[(data[addr_row2] >> 4) & 0b11] << 5;
-    ch1 += map[(data[addr_row2] >> 2) & 0b11] << 4;
-    ch1 += map[(data[addr_row2] >> 0) & 0b11] << 5;
+    ch0 += map0[(data[addr_row2] >> 6) & 0b11] << 4;
+    ch0 += map0[(data[addr_row2] >> 4) & 0b11] << 5;
+    ch1 += map1[(data[addr_row2] >> 2) & 0b11] << 4;
+    ch1 += map1[(data[addr_row2] >> 0) & 0b11] << 5;
 
     // Fourth row
     // gg hh gg hh -> 0b_hg000000
-    ch0 += map[(data[addr_row3] >> 6) & 0b11] << 6;
-    ch0 += map[(data[addr_row3] >> 4) & 0b11] << 7;
-    ch1 += map[(data[addr_row3] >> 2) & 0b11] << 6;
-    ch1 += map[(data[addr_row3] >> 0) & 0b11] << 7;
+    ch0 += map0[(data[addr_row3] >> 6) & 0b11] << 6;
+    ch0 += map0[(data[addr_row3] >> 4) & 0b11] << 7;
+    ch1 += map1[(data[addr_row3] >> 2) & 0b11] << 6;
+    ch1 += map1[(data[addr_row3] >> 0) & 0b11] << 7;
 
     // Output the two characters
     setCursor(termr + 1, termc + 1);
 
-    const fg = PALETTE1[twocolors[1]];
-    setForeground(fg.r, fg.g, fg.b);
-    const bg = PALETTE1[twocolors[0]];
-    setBackground(bg.r, bg.g, bg.b);
+    const fg0 = palette[twocolors0[1]];
+    setForeground(fg0.r, fg0.g, fg0.b);
+    const bg0 = palette[twocolors0[0]];
+    setBackground(bg0.r, bg0.g, bg0.b);
 
     process.stdout.write(BLOCKS_4x2[ch0]);
+
+    const fg1 = palette[twocolors1[1]];
+    setForeground(fg1.r, fg1.g, fg1.b);
+    const bg1 = palette[twocolors1[0]];
+    setBackground(bg1.r, bg1.g, bg1.b);
+
     process.stdout.write(BLOCKS_4x2[ch1]);
 };
 
@@ -293,10 +316,10 @@ const dumpRawImage = (data) => {
 };
 
 const main = async () => {
-    //const cgaimg = await loadCgaImage('ac1.gif');
-    //const cgaimg = await loadCgaImage('av1.gif');
-    const cgaimg = await loadCgaImage('pr1.gif');
-    //const cgaimg = await loadCgaImage('pr2.png');
+    //const { data, palette } = await loadCgaImage('ac1.gif', PALETTE1_LO);
+    //const { data, palette } = await loadCgaImage('av1.gif', PALETTE1_LO);
+    //const { data, palette } = await loadCgaImage('pr1.gif', PALETTE1_HI);
+    const { data, palette } = await loadCgaImage('pr2.png', PALETTE1_LO);
 
     //dumpRawImage(cgaimg);
     //return 0;
@@ -306,7 +329,7 @@ const main = async () => {
     alternateBuffer();
     clearDisplay();
 
-    displayCga_320x200(cgaimg, PALETTE1);
+    displayCga_320x200(data, palette);
     resetColor();
 
     await keypress();
